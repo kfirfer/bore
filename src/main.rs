@@ -92,34 +92,23 @@ async fn run(command: Command) -> Result<()> {
             no_reconnect,
             max_reconnect_delay,
         } => {
-            // First attempt — propagate errors directly for immediate feedback
-            let client = Client::new(&local_host, local_port, &to, port, secret.as_deref()).await?;
-
             if no_reconnect {
                 // Legacy behavior: exit on any disconnection
+                let client =
+                    Client::new(&local_host, local_port, &to, port, secret.as_deref()).await?;
                 client.listen().await?;
             } else {
-                // Reconnection mode: retry on transient failures
+                // Reconnection mode: infinite retry on transient failures
                 let mut backoff = ExponentialBackoff::new(
                     Duration::from_secs(1),
                     Duration::from_secs(max_reconnect_delay),
                 );
 
-                // Run the first listen (we already have a connected client)
-                if let Err(e) = client.listen().await {
-                    warn!("connection lost: {e:#}");
-                }
-
-                // Reconnection loop
                 loop {
-                    let delay = backoff.next_delay();
-                    info!("reconnecting in {delay:.1?}...");
-                    tokio::time::sleep(delay).await;
-
                     match Client::new(&local_host, local_port, &to, port, secret.as_deref()).await {
                         Ok(client) => {
                             backoff.reset();
-                            info!("reconnected successfully");
+                            info!("connected to server");
                             match client.listen().await {
                                 Ok(()) => unreachable!("listen() now always returns Err"),
                                 Err(e) => {
@@ -134,9 +123,13 @@ async fn run(command: Command) -> Result<()> {
                             if is_auth_error(&e) {
                                 return Err(e);
                             }
-                            warn!("reconnection failed: {e:#}");
+                            warn!("connection failed: {e:#}");
                         }
                     }
+
+                    let delay = backoff.next_delay();
+                    info!("reconnecting in {delay:.1?}...");
+                    tokio::time::sleep(delay).await;
                 }
             }
         }
