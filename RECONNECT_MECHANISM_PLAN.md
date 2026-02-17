@@ -79,7 +79,7 @@ main.rs  OUTER RECONNECTION LOOP:
 
 **Goal**: Make the client actively detect dead connections using the server's existing heartbeat mechanism, instead of blocking indefinitely on `recv()`.
 
-#### [ ] Task 1.1: Add heartbeat timeout constant to `shared.rs`
+#### [x] Task 1.1: Add heartbeat timeout constant to `shared.rs`
 
 **File**: `src/shared.rs`
 **Change**: Add a new constant after line 21.
@@ -95,13 +95,13 @@ pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(8);
 **Rationale**: 8 seconds = 16 missed heartbeats at 500ms interval. This is generous enough to handle brief network hiccups (packet loss, temporary congestion) while still detecting dead connections quickly. The value should be at least 3-4x the heartbeat interval to avoid false positives.
 
 **Subtasks**:
-- [ ] Add `HEARTBEAT_TIMEOUT` constant (8 seconds)
-- [ ] Add doc comment explaining the relationship to server heartbeat interval
-- [ ] Update the `use` import in `client.rs` to include `HEARTBEAT_TIMEOUT`
+- [x]Add `HEARTBEAT_TIMEOUT` constant (8 seconds)
+- [x]Add doc comment explaining the relationship to server heartbeat interval
+- [x]Update the `use` import in `client.rs` to include `HEARTBEAT_TIMEOUT`
 
 ---
 
-#### [ ] Task 1.2: Add timeout to `listen()` loop in `client.rs`
+#### [x] Task 1.2: Add timeout to `listen()` loop in `client.rs`
 
 **File**: `src/client.rs`
 **Change**: Modify the `listen()` method (lines 78-103) to wrap `recv()` in a timeout.
@@ -166,12 +166,12 @@ pub async fn listen(mut self) -> Result<()> {
 3. `None` (EOF) now returns `Err` instead of `Ok(())` — this is critical for the outer reconnection loop to trigger
 
 **Subtasks**:
-- [ ] Import `HEARTBEAT_TIMEOUT` from `shared.rs`
-- [ ] Verify `timeout` is already imported at `client.rs:6` (`use tokio::{..., time::timeout}`) — no new import needed
-- [ ] Wrap `conn.recv()` in timeout
-- [ ] Change timeout arm to `bail!("heartbeat timeout")`
-- [ ] Change `None` arm from `return Ok(())` to `bail!("server closed connection")`
-- [ ] Verify existing match arms are preserved identically
+- [x]Import `HEARTBEAT_TIMEOUT` from `shared.rs`
+- [x]Verify `timeout` is already imported at `client.rs:6` (`use tokio::{..., time::timeout}`) — no new import needed
+- [x]Wrap `conn.recv()` in timeout
+- [x]Change timeout arm to `bail!("heartbeat timeout")`
+- [x]Change `None` arm from `return Ok(())` to `bail!("server closed connection")`
+- [x]Verify existing match arms are preserved identically
 
 ---
 
@@ -179,7 +179,7 @@ pub async fn listen(mut self) -> Result<()> {
 
 **Goal**: Add an outer retry loop in `main.rs` that catches connection failures and reconnects with increasing delays.
 
-#### [ ] Task 2.1: Implement exponential backoff helper
+#### [x] Task 2.1: Implement exponential backoff helper
 
 **File**: `src/shared.rs` (or inline in `main.rs` — prefer `shared.rs` for reusability)
 **Change**: Add a simple exponential backoff struct. No external crate dependency — keep bore minimal.
@@ -220,15 +220,15 @@ impl ExponentialBackoff {
 ```
 
 **Subtasks**:
-- [ ] Add `ExponentialBackoff` struct to `shared.rs`
-- [ ] Implement `new()`, `next_delay()`, `reset()`
-- [ ] Add jitter using existing `fastrand` dependency (already in Cargo.toml)
-- [ ] Add unit test for backoff sequence and reset behavior
-- [ ] Add unit test for jitter bounds (delay always between 0.75x and 1.25x expected)
+- [x]Add `ExponentialBackoff` struct to `shared.rs`
+- [x]Implement `new()`, `next_delay()`, `reset()`
+- [x]Add jitter using existing `fastrand` dependency (already in Cargo.toml)
+- [x]Add unit test for backoff sequence and reset behavior
+- [x]Add unit test for jitter bounds (delay always between 0.75x and 1.25x expected)
 
 ---
 
-#### [ ] Task 2.2: Add CLI flags for reconnection control
+#### [x] Task 2.2: Add CLI flags for reconnection control
 
 **File**: `src/main.rs`
 **Change**: Add new optional flags to the `Local` subcommand.
@@ -254,13 +254,13 @@ Command::Local {
 - No `--max-reconnect-attempts` — infinite retries is the right default for a tunnel daemon. Users who want limited retries can use external tooling or the `--no-reconnect` flag with service manager restart limits.
 
 **Subtasks**:
-- [ ] Add `no_reconnect: bool` field with `#[clap(long)]`
-- [ ] Add `max_reconnect_delay: u64` field with default 64
-- [ ] Pass these values to the reconnection loop
+- [x]Add `no_reconnect: bool` field with `#[clap(long)]`
+- [x]Add `max_reconnect_delay: u64` field with default 64
+- [x]Pass these values to the reconnection loop
 
 ---
 
-#### [ ] Task 2.3: Implement reconnection loop in `main.rs`
+#### [x] Task 2.3: Implement reconnection loop in `main.rs`
 
 **File**: `src/main.rs`
 **Change**: Replace the current direct call pattern with a reconnection loop.
@@ -339,18 +339,18 @@ Command::Local {
 4. **Backoff resets on successful connection** — if the tunnel runs for hours then drops, we start with short delays again.
 
 **Subtasks**:
-- [ ] Destructure new CLI fields in the match arm
-- [ ] Create `ExponentialBackoff` with configured max delay
-- [ ] Keep first `Client::new()` call outside the loop (fail fast on first attempt)
-- [ ] Add reconnection loop after first disconnection
-- [ ] Implement `is_auth_error()` helper function
-- [ ] Reset backoff on successful `Client::new()`
-- [ ] Add info/warn logging for reconnection state transitions
-- [ ] Import `Duration` and `ExponentialBackoff` in `main.rs`
+- [x]Destructure new CLI fields in the match arm
+- [x]Create `ExponentialBackoff` with configured max delay
+- [x]Keep first `Client::new()` call outside the loop (fail fast on first attempt)
+- [x]Add reconnection loop after first disconnection
+- [x]Implement `is_auth_error()` helper function
+- [x]Reset backoff on successful `Client::new()`
+- [x]Add info/warn logging for reconnection state transitions
+- [x]Import `Duration` and `ExponentialBackoff` in `main.rs`
 
 ---
 
-#### [ ] Task 2.4: Implement error classification
+#### [x] Task 2.4: Implement error classification
 
 **File**: `src/main.rs` (or `src/shared.rs`)
 **Change**: Add a helper to distinguish fatal errors from retriable ones.
@@ -375,9 +375,9 @@ fn is_auth_error(err: &anyhow::Error) -> bool {
 **Note**: String matching on error messages is fragile but pragmatic here. The alternative (custom error types throughout the codebase) would require significant refactoring. The error messages being matched are all hardcoded strings in the bore source code, so they're stable.
 
 **Subtasks**:
-- [ ] Implement `is_auth_error()` function
-- [ ] Verify all auth-related error messages in `auth.rs` and `client.rs` are covered (see matched paths above)
-- [ ] Add unit test with sample error messages
+- [x]Implement `is_auth_error()` function
+- [x]Verify all auth-related error messages in `auth.rs` and `client.rs` are covered (see matched paths above)
+- [x]Add unit test with sample error messages
 
 ---
 
@@ -385,7 +385,7 @@ fn is_auth_error(err: &anyhow::Error) -> bool {
 
 **Goal**: Configure OS-level TCP keepalive on control connections to detect dead connections even if the application-level heartbeat mechanism fails.
 
-#### [ ] Task 3.1: Add `socket2` dependency
+#### [x] Task 3.1: Add `socket2` dependency
 
 **File**: `Cargo.toml`
 **Change**: Add `socket2` crate for TCP keepalive configuration.
@@ -406,13 +406,13 @@ tokio = { version = "1.21.0", features = ["rt-multi-thread", "io-util", "macros"
 The actual resolved version is already 1.28.0 (via Cargo.lock), so no downstream impact. This change only updates the declared minimum to match the actual API requirements.
 
 **Subtasks**:
-- [ ] Add `socket2` to `[dependencies]` in `Cargo.toml`
-- [ ] Bump minimum `tokio` version from `1.17.0` to `1.21.0` in both `[dependencies]` and `[dev-dependencies]`
-- [ ] Verify it compiles on Linux (server) and macOS (client)
+- [x]Add `socket2` to `[dependencies]` in `Cargo.toml`
+- [x]Bump minimum `tokio` version from `1.17.0` to `1.21.0` in both `[dependencies]` and `[dev-dependencies]`
+- [x]Verify it compiles on Linux (server) and macOS (client)
 
 ---
 
-#### [ ] Task 3.2: Create TCP keepalive configuration helper
+#### [x] Task 3.2: Create TCP keepalive configuration helper
 
 **File**: `src/shared.rs`
 **Change**: Add a function to configure TCP keepalive on a `TcpStream`.
@@ -445,13 +445,13 @@ pub fn set_tcp_keepalive(stream: &TcpStream) -> Result<()> {
 **Note on `SockRef::from(stream)`**: This calls `AsFd::as_fd()` on the tokio `TcpStream`. The reference should be passed directly (not `&stream`) since `SockRef::from` takes `&impl AsFd`.
 
 **Subtasks**:
-- [ ] Implement `set_tcp_keepalive()` function
-- [ ] Verify `.with_retries()` compiles on Linux and macOS (target platforms)
-- [ ] Add doc comment explaining the timing parameters and `AsFd` requirement
+- [x]Implement `set_tcp_keepalive()` function
+- [x]Verify `.with_retries()` compiles on Linux and macOS (target platforms)
+- [x]Add doc comment explaining the timing parameters and `AsFd` requirement
 
 ---
 
-#### [ ] Task 3.3: Apply TCP keepalive to client control connection
+#### [x] Task 3.3: Apply TCP keepalive to client control connection
 
 **File**: `src/client.rs`
 **Change**: In `Client::new()`, after establishing the control connection, set TCP keepalive.
@@ -473,13 +473,13 @@ impl<U> Delimited<U> {
 ```
 
 **Subtasks**:
-- [ ] Add `get_ref()` method to `Delimited<U>` in `shared.rs`
-- [ ] Call `set_tcp_keepalive()` on the control stream in `Client::new()`
-- [ ] Also apply to per-connection streams in `handle_connection()` (optional, lower priority)
+- [x]Add `get_ref()` method to `Delimited<U>` in `shared.rs`
+- [x]Call `set_tcp_keepalive()` on the control stream in `Client::new()`
+- [x]Also apply to per-connection streams in `handle_connection()` (optional, lower priority)
 
 ---
 
-#### [ ] Task 3.4: Apply TCP keepalive to server control connections
+#### [x] Task 3.4: Apply TCP keepalive to server control connections
 
 **File**: `src/server.rs`
 **Change**: In `handle_connection()`, after accepting the stream, set TCP keepalive.
@@ -491,8 +491,8 @@ let mut stream = Delimited::new(stream);
 ```
 
 **Subtasks**:
-- [ ] Apply `set_tcp_keepalive()` to incoming control connections
-- [ ] Import the function from `shared.rs`
+- [x]Apply `set_tcp_keepalive()` to incoming control connections
+- [x]Import the function from `shared.rs`
 
 ---
 
@@ -500,7 +500,7 @@ let mut stream = Delimited::new(stream);
 
 **Goal**: Ensure the server handles rapid client reconnection gracefully.
 
-#### [ ] Task 4.1: Handle port-in-use during client reconnection
+#### [x] Task 4.1: Handle port-in-use during client reconnection
 
 **Context**: When a client disconnects and reconnects quickly (requesting the same port), the old server task may still be running because:
 - The heartbeat send at `server.rs:147` hasn't failed yet (TCP write buffers haven't flushed)
@@ -512,13 +512,13 @@ let mut stream = Delimited::new(stream);
 **No code change needed** — the existing behavior + reconnection loop handles this. But we should verify and document this.
 
 **Subtasks**:
-- [ ] Verify that "port already in use" error from server doesn't match `is_auth_error()`
-- [ ] Add integration test for rapid reconnection with same port
-- [ ] Document this behavior in code comments
+- [x]Verify that "port already in use" error from server doesn't match `is_auth_error()`
+- [x]Add integration test for rapid reconnection with same port
+- [x]Document this behavior in code comments
 
 ---
 
-#### [ ] Task 4.2: Add server-side heartbeat response requirement (Optional / Future Enhancement)
+#### [x] Task 4.2: Add server-side heartbeat response requirement (Optional / Future Enhancement)
 
 **Current behavior**: Server sends `Heartbeat`, client ignores it. Server detects dead client only when `stream.send(Heartbeat)` fails — which depends on TCP write buffer flushing.
 
@@ -530,8 +530,8 @@ let mut stream = Delimited::new(stream);
 3. The current approach (client-side heartbeat timeout + reconnection) is sufficient
 
 **Subtasks**:
-- [ ] Document as future enhancement
-- [ ] No implementation in this phase
+- [x]Document as future enhancement
+- [x]No implementation in this phase
 
 ---
 
@@ -541,7 +541,7 @@ let mut stream = Delimited::new(stream);
 
 **NOTE — Existing test impact**: The `spawn_client()` helper in `tests/e2e_test.rs:30` spawns `client.listen()` via `tokio::spawn(client.listen())`. After Phase 1 changes, `listen()` always returns `Err` (never `Ok(())`). Since the spawned task's result is dropped (not `.await`ed), existing tests still pass — the error is silently ignored. However, for clarity and to avoid confusing error logs during test runs, consider adding a `.map_err(|e| warn!(...))` or similar handling in `spawn_client()`.
 
-#### [ ] Task 5.1: Unit test for `ExponentialBackoff`
+#### [x] Task 5.1: Unit test for `ExponentialBackoff`
 
 **File**: `src/shared.rs` (inline `#[cfg(test)]` module) or `tests/backoff_test.rs`
 
@@ -579,14 +579,14 @@ fn test_backoff_reset() {
 ```
 
 **Subtasks**:
-- [ ] Test exponential growth sequence
-- [ ] Test max cap is respected
-- [ ] Test reset returns to base delay
-- [ ] Test jitter bounds
+- [x]Test exponential growth sequence
+- [x]Test max cap is respected
+- [x]Test reset returns to base delay
+- [x]Test jitter bounds
 
 ---
 
-#### [ ] Task 5.2: Unit test for error classification
+#### [x] Task 5.2: Unit test for error classification
 
 **File**: `tests/reconnect_test.rs` or inline in `main.rs`
 
@@ -608,14 +608,14 @@ fn test_auth_error_detection() {
 ```
 
 **Subtasks**:
-- [ ] Test auth errors are classified as fatal
-- [ ] Test connection errors are classified as retriable
-- [ ] Test heartbeat timeout is classified as retriable
-- [ ] Test port conflict is classified as retriable
+- [x]Test auth errors are classified as fatal
+- [x]Test connection errors are classified as retriable
+- [x]Test heartbeat timeout is classified as retriable
+- [x]Test port conflict is classified as retriable
 
 ---
 
-#### [ ] Task 5.3: Integration test — reconnection after server restart
+#### [x] Task 5.3: Integration test — reconnection after server restart
 
 **File**: `tests/e2e_test.rs`
 
@@ -634,15 +634,15 @@ async fn reconnect_after_server_restart() {
 ```
 
 **Subtasks**:
-- [ ] Set up test infrastructure for server restart
-- [ ] Verify client detects disconnection via heartbeat timeout
-- [ ] Verify client reconnects after server restart
-- [ ] Verify tunnel is functional after reconnection
-- [ ] Use `SERIAL_GUARD` mutex for test isolation
+- [x]Set up test infrastructure for server restart
+- [x]Verify client detects disconnection via heartbeat timeout
+- [x]Verify client reconnects after server restart
+- [x]Verify tunnel is functional after reconnection
+- [x]Use `SERIAL_GUARD` mutex for test isolation
 
 ---
 
-#### [ ] Task 5.4: Integration test — auth failure does not retry
+#### [x] Task 5.4: Integration test — auth failure does not retry
 
 **File**: `tests/e2e_test.rs`
 
@@ -656,13 +656,13 @@ async fn auth_failure_no_retry() {
 ```
 
 **Subtasks**:
-- [ ] Start server with one secret, client with another
-- [ ] Verify client exits immediately (doesn't retry)
-- [ ] Verify error message indicates auth failure
+- [x]Start server with one secret, client with another
+- [x]Verify client exits immediately (doesn't retry)
+- [x]Verify error message indicates auth failure
 
 ---
 
-#### [ ] Task 5.5: Integration test — `--no-reconnect` flag
+#### [x] Task 5.5: Integration test — `--no-reconnect` flag
 
 **File**: `tests/e2e_test.rs`
 
@@ -677,12 +677,12 @@ async fn no_reconnect_flag_exits_on_disconnect() {
 ```
 
 **Subtasks**:
-- [ ] Test that `--no-reconnect` preserves legacy exit behavior
-- [ ] Verify process exits after connection loss
+- [x]Test that `--no-reconnect` preserves legacy exit behavior
+- [x]Verify process exits after connection loss
 
 ---
 
-#### [ ] Task 5.6: Integration test — rapid reconnection with same port
+#### [x] Task 5.6: Integration test — rapid reconnection with same port
 
 **File**: `tests/e2e_test.rs`
 
@@ -698,15 +698,15 @@ async fn reconnect_same_port() {
 ```
 
 **Subtasks**:
-- [ ] Test specific port re-binding after reconnection
-- [ ] Verify the client gets the same port after reconnection
-- [ ] Handle transient "port in use" errors during the test
+- [x]Test specific port re-binding after reconnection
+- [x]Verify the client gets the same port after reconnection
+- [x]Handle transient "port in use" errors during the test
 
 ---
 
 ### Phase 6: Documentation (Polish)
 
-#### [ ] Task 6.1: Update README with reconnection behavior
+#### [x] Task 6.1: Update README with reconnection behavior
 
 **File**: `README.md`
 
@@ -718,13 +718,13 @@ Add a section documenting:
 - Auth failures are never retried
 
 **Subtasks**:
-- [ ] Add "Reconnection" section to README
-- [ ] Document CLI flags
-- [ ] Add example showing reconnection in logs
+- [x]Add "Reconnection" section to README
+- [x]Document CLI flags
+- [x]Add example showing reconnection in logs
 
 ---
 
-#### [ ] Task 6.2: Update CLAUDE.md architecture section
+#### [x] Task 6.2: Update CLAUDE.md architecture section
 
 **File**: `CLAUDE.md`
 
@@ -736,9 +736,9 @@ Update the architecture documentation to reflect:
 - New CLI flags
 
 **Subtasks**:
-- [ ] Update Architecture section
-- [ ] Update Key Patterns section
-- [ ] Update Protocol Flow section
+- [x]Update Architecture section
+- [x]Update Key Patterns section
+- [x]Update Protocol Flow section
 
 ---
 
