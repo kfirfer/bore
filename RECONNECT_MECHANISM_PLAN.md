@@ -1,5 +1,11 @@
 # Bore Auto-Reconnect Mechanism Plan
 
+> **Validation Status**: Validated against codebase on 2026-02-17 (commit `4851ace`).
+> All line number references verified accurate. Corrections applied for:
+> auth error string matching (Task 2.4/5.2), tokio minimum version for socket2
+> compatibility (Task 3.1), timeout import style (Task 1.2), and existing test
+> impact (Phase 5 note).
+
 ## Problem Statement
 
 When using bore in a client-server deployment (systemd on the server, launchd on macOS client), internet disruptions cause the TCP control connection between client and server to die. The bore client process exits (gracefully or with error), and even though the service manager restarts it, several failure modes prevent automatic recovery:
@@ -123,7 +129,7 @@ pub async fn listen(mut self) -> Result<()> {
     let mut conn = self.conn.take().unwrap();
     let this = Arc::new(self);
     loop {
-        match tokio::time::timeout(HEARTBEAT_TIMEOUT, conn.recv()).await {
+        match timeout(HEARTBEAT_TIMEOUT, conn.recv()).await {
             Err(_elapsed) => {
                 // No message received for HEARTBEAT_TIMEOUT seconds.
                 // Server sends heartbeats every 500ms, so connection is dead.
@@ -155,13 +161,13 @@ pub async fn listen(mut self) -> Result<()> {
 ```
 
 **Key changes**:
-1. `recv()` is wrapped in `tokio::time::timeout(HEARTBEAT_TIMEOUT, ...)`
+1. `recv()` is wrapped in `timeout(HEARTBEAT_TIMEOUT, ...)` (using the already-imported `tokio::time::timeout`)
 2. Timeout expiry returns an error (retriable) instead of blocking forever
 3. `None` (EOF) now returns `Err` instead of `Ok(())` — this is critical for the outer reconnection loop to trigger
 
 **Subtasks**:
 - [ ] Import `HEARTBEAT_TIMEOUT` from `shared.rs`
-- [ ] Import `tokio::time::timeout` (already imported but verify scope)
+- [ ] Verify `timeout` is already imported at `client.rs:6` (`use tokio::{..., time::timeout}`) — no new import needed
 - [ ] Wrap `conn.recv()` in timeout
 - [ ] Change timeout arm to `bail!("heartbeat timeout")`
 - [ ] Change `None` arm from `return Ok(())` to `bail!("server closed connection")`
@@ -354,16 +360,23 @@ Command::Local {
 fn is_auth_error(err: &anyhow::Error) -> bool {
     let msg = format!("{err:#}");
     msg.contains("server requires authentication")
-        || msg.contains("invalid auth")
-        || msg.contains("server handshake failed")
+        || msg.contains("invalid secret")
+        || msg.contains("server requires secret")
+        || msg.contains("expected authentication challenge")
 }
 ```
+
+**Matched error paths** (verified against source):
+- `"server requires authentication, but no client secret was provided"` — `client.rs:54`, when server sends `Challenge` but client has no secret
+- `"server error: invalid secret"` — `auth.rs:59` → `server.rs:123` → `client.rs:52`, when HMAC validation fails
+- `"server error: server requires secret, but no secret was provided"` — `auth.rs:62` → `server.rs:123` → `client.rs:52`, when client skips auth but server requires it
+- `"expected authentication challenge, but no secret was required"` — `auth.rs:73`, when client has secret but server doesn't require one
 
 **Note**: String matching on error messages is fragile but pragmatic here. The alternative (custom error types throughout the codebase) would require significant refactoring. The error messages being matched are all hardcoded strings in the bore source code, so they're stable.
 
 **Subtasks**:
 - [ ] Implement `is_auth_error()` function
-- [ ] Verify all auth-related error messages in `auth.rs` and `client.rs` are covered
+- [ ] Verify all auth-related error messages in `auth.rs` and `client.rs` are covered (see matched paths above)
 - [ ] Add unit test with sample error messages
 
 ---
@@ -384,8 +397,17 @@ socket2 = { version = "0.5", features = ["all"] }
 
 **Rationale**: `socket2` provides cross-platform TCP keepalive configuration that `tokio::net::TcpStream` doesn't expose directly. It's a well-maintained, zero-overhead wrapper around OS socket APIs.
 
+**IMPORTANT — Tokio version bump required**: `socket2::SockRef::from()` requires the `AsFd` trait (on Unix). Tokio's `TcpStream` only implements `AsFd` since **tokio 1.21.0** (Aug 2022). The current `Cargo.toml` specifies minimum `tokio >= 1.17.0`. This must be bumped:
+
+```toml
+tokio = { version = "1.21.0", features = ["rt-multi-thread", "io-util", "macros", "net", "time"] }
+```
+
+The actual resolved version is already 1.28.0 (via Cargo.lock), so no downstream impact. This change only updates the declared minimum to match the actual API requirements.
+
 **Subtasks**:
 - [ ] Add `socket2` to `[dependencies]` in `Cargo.toml`
+- [ ] Bump minimum `tokio` version from `1.17.0` to `1.21.0` in both `[dependencies]` and `[dev-dependencies]`
 - [ ] Verify it compiles on Linux (server) and macOS (client)
 
 ---
@@ -397,17 +419,20 @@ socket2 = { version = "0.5", features = ["all"] }
 
 ```rust
 use socket2::{SockRef, TcpKeepalive};
+use tokio::net::TcpStream;
 
 /// Configure TCP keepalive on a stream for faster dead connection detection.
 ///
 /// This sets the OS to start probing after 30s of idle, probe every 10s,
 /// and give up after 3 failed probes (~60s total to detect a dead connection).
+///
+/// Requires tokio >= 1.21.0 for `AsFd` impl on `TcpStream`.
 pub fn set_tcp_keepalive(stream: &TcpStream) -> Result<()> {
-    let sock_ref = SockRef::from(&stream);
+    let sock_ref = SockRef::from(stream);
     let keepalive = TcpKeepalive::new()
         .with_time(Duration::from_secs(30))
         .with_interval(Duration::from_secs(10))
-        .with_retries(3);  // Note: retries not supported on all platforms
+        .with_retries(3);  // Supported on Linux and macOS; not on Windows
     sock_ref
         .set_tcp_keepalive(&keepalive)
         .context("failed to set TCP keepalive")?;
@@ -415,10 +440,14 @@ pub fn set_tcp_keepalive(stream: &TcpStream) -> Result<()> {
 }
 ```
 
+**Platform support for `.with_retries()`**: Supported on Linux (via `TCP_KEEPCNT`) and macOS — both target platforms per the problem statement. Not supported on Windows or some niche platforms (OpenBSD, Haiku, Redox). Since bore's reconnect use case targets Linux servers and macOS clients, this is fine as-is. If Windows support is ever needed, use `#[cfg]` to conditionally omit `.with_retries()`.
+
+**Note on `SockRef::from(stream)`**: This calls `AsFd::as_fd()` on the tokio `TcpStream`. The reference should be passed directly (not `&stream`) since `SockRef::from` takes `&impl AsFd`.
+
 **Subtasks**:
 - [ ] Implement `set_tcp_keepalive()` function
-- [ ] Handle platform differences (`.with_retries()` is not available on Windows)
-- [ ] Add doc comment explaining the timing parameters
+- [ ] Verify `.with_retries()` compiles on Linux and macOS (target platforms)
+- [ ] Add doc comment explaining the timing parameters and `AsFd` requirement
 
 ---
 
@@ -510,6 +539,8 @@ let mut stream = Delimited::new(stream);
 
 **Goal**: Comprehensive test coverage for all reconnection scenarios.
 
+**NOTE — Existing test impact**: The `spawn_client()` helper in `tests/e2e_test.rs:30` spawns `client.listen()` via `tokio::spawn(client.listen())`. After Phase 1 changes, `listen()` always returns `Err` (never `Ok(())`). Since the spawned task's result is dropped (not `.await`ed), existing tests still pass — the error is silently ignored. However, for clarity and to avoid confusing error logs during test runs, consider adding a `.map_err(|e| warn!(...))` or similar handling in `spawn_client()`.
+
 #### [ ] Task 5.1: Unit test for `ExponentialBackoff`
 
 **File**: `src/shared.rs` (inline `#[cfg(test)]` module) or `tests/backoff_test.rs`
@@ -562,11 +593,17 @@ fn test_backoff_reset() {
 ```rust
 #[test]
 fn test_auth_error_detection() {
+    // Fatal auth errors — should NOT be retried
     assert!(is_auth_error(&anyhow::anyhow!("server requires authentication, but no client secret was provided")));
-    assert!(is_auth_error(&anyhow::anyhow!("invalid auth")));
+    assert!(is_auth_error(&anyhow::anyhow!("server error: invalid secret")));
+    assert!(is_auth_error(&anyhow::anyhow!("server error: server requires secret, but no secret was provided")));
+    assert!(is_auth_error(&anyhow::anyhow!("expected authentication challenge, but no secret was required")));
+
+    // Retriable errors — should be retried
     assert!(!is_auth_error(&anyhow::anyhow!("could not connect to server:7835")));
-    assert!(!is_auth_error(&anyhow::anyhow!("heartbeat timeout")));
-    assert!(!is_auth_error(&anyhow::anyhow!("port already in use")));
+    assert!(!is_auth_error(&anyhow::anyhow!("heartbeat timeout, connection to server lost")));
+    assert!(!is_auth_error(&anyhow::anyhow!("server error: port already in use")));
+    assert!(!is_auth_error(&anyhow::anyhow!("server closed connection")));
 }
 ```
 
@@ -713,7 +750,7 @@ Update the architecture documentation to reflect:
 | `src/client.rs` | Heartbeat timeout in `listen()`, TCP keepalive in `new()` | +15, -5 |
 | `src/main.rs` | CLI flags, reconnection loop, `is_auth_error()` | +60, -3 |
 | `src/server.rs` | TCP keepalive on control connections | +3 |
-| `Cargo.toml` | Add `socket2` dependency | +1 |
+| `Cargo.toml` | Add `socket2` dependency, bump tokio minimum to 1.21.0 | +1, ~2 |
 | `tests/e2e_test.rs` | Reconnection integration tests | +120 |
 | `README.md` | Documentation update | +30 |
 | `CLAUDE.md` | Architecture update | +15 |
@@ -724,8 +761,9 @@ Update the architecture documentation to reflect:
 | Crate | Version | Purpose | Size Impact |
 |-------|---------|---------|-------------|
 | `socket2` | 0.5 | TCP keepalive configuration | Minimal (thin OS wrapper) |
+| `tokio` | 1.17.0 → 1.21.0 (minimum bump) | Required for `AsFd` impl on `TcpStream` (used by `socket2`) | No change (resolved version already 1.28.0) |
 
-No other new dependencies. The exponential backoff is implemented inline using the existing `fastrand` crate.
+No other new dependencies. The exponential backoff is implemented inline using the existing `fastrand` crate (v1.9.0, which provides the `f64()` function used for jitter).
 
 ## Risks and Mitigations
 
