@@ -39,11 +39,11 @@ enum Command {
         secret: Option<String>,
 
         /// Disable automatic reconnection on connection loss.
-        #[clap(long, default_value_t = false)]
+        #[clap(long)]
         no_reconnect: bool,
 
         /// Maximum delay between reconnection attempts, in seconds.
-        #[clap(long, default_value_t = 64, value_name = "SECONDS")]
+        #[clap(long, default_value_t = 64, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..))]
         max_reconnect_delay: u64,
     },
 
@@ -93,10 +93,16 @@ async fn run(command: Command) -> Result<()> {
             max_reconnect_delay,
         } => {
             if no_reconnect {
-                // Legacy behavior: exit on any disconnection
+                // Legacy behavior: exit cleanly on disconnection, fail on auth errors
                 let client =
                     Client::new(&local_host, local_port, &to, port, secret.as_deref()).await?;
-                client.listen().await?;
+                match client.listen().await {
+                    Ok(()) => {}
+                    Err(e) if is_auth_error(&e) => return Err(e),
+                    Err(e) => {
+                        warn!("disconnected: {e:#}");
+                    }
+                }
             } else {
                 // Reconnection mode: infinite retry on transient failures
                 let mut backoff = ExponentialBackoff::new(
@@ -110,7 +116,9 @@ async fn run(command: Command) -> Result<()> {
                             backoff.reset();
                             info!("connected to server");
                             match client.listen().await {
-                                Ok(()) => unreachable!("listen() now always returns Err"),
+                                Ok(()) => {
+                                    warn!("listen() exited cleanly, reconnecting");
+                                }
                                 Err(e) => {
                                     if is_auth_error(&e) {
                                         return Err(e);

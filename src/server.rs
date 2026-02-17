@@ -116,7 +116,9 @@ impl Server {
     }
 
     async fn handle_connection(&self, stream: TcpStream) -> Result<()> {
-        set_tcp_keepalive(&stream)?;
+        if let Err(e) = set_tcp_keepalive(&stream) {
+            warn!("TCP keepalive not available: {e:#}");
+        }
         let mut stream = Delimited::new(stream);
         if let Some(auth) = &self.auth {
             if let Err(err) = auth.server_handshake(&mut stream).await {

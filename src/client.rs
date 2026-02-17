@@ -44,7 +44,9 @@ impl Client {
         secret: Option<&str>,
     ) -> Result<Self> {
         let tcp_stream = connect_with_timeout(to, CONTROL_PORT).await?;
-        set_tcp_keepalive(&tcp_stream)?;
+        if let Err(e) = set_tcp_keepalive(&tcp_stream) {
+            warn!("TCP keepalive not available: {e:#}");
+        }
         let mut stream = Delimited::new(tcp_stream);
         let auth = secret.map(Authenticator::new);
         if let Some(auth) = &auth {
@@ -56,6 +58,7 @@ impl Client {
             Some(ServerMessage::Hello(remote_port)) => remote_port,
             Some(ServerMessage::Error(message)) => bail!("server error: {message}"),
             Some(ServerMessage::Challenge(_)) => {
+                // NOTE: This message is matched by is_auth_error() in main.rs.
                 bail!("server requires authentication, but no client secret was provided");
             }
             Some(_) => bail!("unexpected initial non-hello message"),
